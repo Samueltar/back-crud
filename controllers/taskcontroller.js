@@ -1,97 +1,92 @@
-const fs = require('fs').promises;
-const path = require('path');
+const db = require('../config/db');
 
-const FILE_PATH = path.join(__dirname, '../tasks.json');
-
-async function getTasks() {
-    try {
-        const data = await fs.readFile(FILE_PATH, 'utf-8');
-        return JSON.parse(data);
-    } catch (error) {
-        return [];
+exports.getAllTasks = (req, res) =>{
+    try{
+        let query = 'SELECT * FROM tasks';
+        const params = [];
+        const conditions = [];
+    
+    if(req.query.completed !== undefined){
+         conditions.push('completed = ?');
+        params.push(req.query.completed === 'true' ? 1 : 0);
     }
-}
 
-async function saveTasks(tasks) {
-    await fs.writeFile(FILE_PATH, JSON.stringify(tasks, null, 2));
-}
-
-exports.getAllTasks = async (req, res) => {
-    try {
-        const tasks = await getTasks();
-        res.json(tasks);
-    } catch (error) {
-        res.status(500).json({ message: 'Error reading tasks', error: error.message });
+    if(req.query.search){
+        conditions.push('title LIKE ?');
+        params.push(`%${req.query.search}%`);
     }
+
+    if(conditions.length>0){
+        query += ' WHERE ' + conditions.join(' AND ');
+    }
+    const tasks = db.prepare(query).all(...params);
+    res.json(tasks);
+}  catch(error){
+    res.status(500).json({message: 'error reading tasks from database', error: error.message});
+}
 };
 
-exports.getTaskById = async (req, res) => {
-    try {
-        const tasks = await getTasks();
-        const taskId = parseInt(req.params.id);
-        const task = tasks.find(t => t.id === taskId);
-        if (!task) {
-            return res.status(404).json({ message: 'Task not found' });
-        }
-        res.json(task);
-    } catch (error) {
-        res.status(500).json({ message: 'Error retrieving task', error: error.message });
-    }
-};
-
-exports.createTask = async (req, res) => {
-    try {
-        if (!req.body.title || req.body.title.trim() === '') {
-            return res.status(400).json({ message: 'Title is required' });
-        }
-        const tasks = await getTasks();
-        const newTask = {
-            id: tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1,
-            title: req.body.title.trim(),
-            completed: Boolean(req.body.completed)
+exports.getTaskById = (req, res) => {
+    try{
+        const tasks = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+        if(!tasks){
+            return res.status(404).json({message : 'Task with ${req.params.id} not found'});
+    
         };
-        tasks.push(newTask);
-        await saveTasks(tasks);
-        res.status(201).json(newTask);
-    } catch (error) {
-        res.status(500).json({ message: 'Error creating task', error: error.message });
+         res.json(tasks);
+    }
+
+    catch(error){
+        res.status(500).json({message: 'error reading task from database', error: error.message});
     }
 };
 
-exports.updateTask = async (req, res) => {
-    try {
-        const tasks = await getTasks();
-        const taskId = parseInt(req.params.id);
-        const task = tasks.find(t => t.id === taskId);
+exports.createTask = (req, res) =>{
+    try{
+        if(!req.body.title || req.body.title.trim() === ''){
+            return res.status(400).json({message: 'Task title is required'});
+        };
 
-        if (!task) {
-            return res.status(404).json({ message: 'Task not found' });
-        }
-        if (req.body.title !== undefined) {
-            task.title = req.body.title.trim();
-        }
-        if (req.body.completed !== undefined) {
-            task.completed = Boolean(req.body.completed);
-        }
-        await saveTasks(tasks);
-        res.json(task);
+        const title = req.body.title.trim();
+        const completed = req.body.completed ? 1 : 0;
+
+        const stmt = db.prepare('INSERT INTO tasks (title, completed) VALUES (?,?)');
+        const result = stmt.run(title, completed);
+        res.status(201).json({message: 'Task created successfully', task: {id: result.lastInsertRowid, title, completed}});
+
+}
+    catch(error){
+        res.status(500).json({message: 'error creating task in database', error: error.message});
+    }
+};
+
+exports.updateTask = (req, res) =>{
+    try{
+       const taskId = req.params.id; // ✅ req.params
+        const existing = db.prepare('SELECT * FROM tasks WHERE id =? ').get(taskId);
+      if (!existing) {
+    return res.status(404).json({ message: 'Task not found' }); // ✅ Added return & 404
+}
+
+        const title = req.body.title !== undefined ? req.body.title.trim() : existing.title;
+        const completed =req.body.completed !== undefined ? (req.body.completed ? 1 : 0) : existing.completed;
+         db.prepare('UPDATE tasks SET title = ?, completed = ? WHERE id = ?').run(title, completed, taskId);
+         res.json({ id: Number(taskId), title, completed });
     } catch (error) {
         res.status(500).json({ message: 'Error updating task', error: error.message });
     }
 };
-
-exports.deleteTask = async (req, res) => {
+   exports.deleteTask = (req, res) => {
     try {
-        const tasks = await getTasks();
-        const taskId = parseInt(req.params.id);
-        const taskIndex = tasks.findIndex(t => t.id === taskId);
-        if (taskIndex === -1) {
+        const taskId = req.params.id;
+        const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+        if (!existing) {
             return res.status(404).json({ message: 'Task not found' });
         }
-        const deletedTask = tasks.splice(taskIndex, 1);
-        await saveTasks(tasks);
-        res.json({ message: 'Task deleted successfully', task: deletedTask[0] });
+        db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+        res.json({ message: 'Task deleted successfully', task: existing });
     } catch (error) {
         res.status(500).json({ message: 'Error deleting task', error: error.message });
     }
 };
+
