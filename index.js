@@ -4,7 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const taskRoutes = require('./routes/taskRoutes');
 const logger = require('./middleware/logger');
-
+const authRoutes = require('./routes/authRoutes');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -16,6 +16,7 @@ app.use(express.static('public'));
 
 // Routes
 app.use('/api/tasks', taskRoutes);
+app.use('/api/auth', authRoutes);
 
 // 404 Catch-All
 app.use((req, res, next) => {

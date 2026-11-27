@@ -1,5 +1,5 @@
 const Database = require('better-sqlite3');
-const path = require('path');
+const path = require('path')
 
 const dbPath = path.join(__dirname, '../tasks.db');
 const db = new Database(dbPath);
@@ -13,6 +13,16 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 db.exec(createTableQuery);
 
-console.log('✅ SQLite Database connected & tasks table ready!');
+console.log('Database initialized and tasks table created (if not exists)');
+
+const createUsersTableQuery = `
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL
+)`;
+
+db.exec(createUsersTableQuery);
 
 module.exports = db;

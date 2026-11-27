@@ -5,33 +5,140 @@
   <title>My Task Manager</title>
   <style>
     body { font-family: sans-serif; max-width: 500px; margin: 40px auto; padding: 20px; background: #f4f6f8; }
-    h1 { color: #333; }
-    .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .input-group { display: flex; gap: 10px; margin-bottom: 20px; }
-    input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; }
+    h1, h2 { color: #333; margin-top: 0; }
+    .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .input-group { display: flex; gap: 10px; margin-bottom: 12px; }
+    .stack { display: flex; flex-direction: column; gap: 10px; }
+    input[type="text"], input[type="email"], input[type="password"] { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 15px; }
     button { padding: 10px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 15px; }
+    button.secondary { background: #28a745; }
+    button.logout-btn { background: #6c757d; padding: 6px 12px; font-size: 13px; }
     ul { list-style: none; padding: 0; }
     li { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid #eee; }
     li.done span { text-decoration: line-through; color: #888; }
     .del-btn { background: #dc3545; padding: 6px 10px; font-size: 12px; }
+    .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .msg { font-size: 14px; color: #d9534f; margin-top: 8px; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>📝 Task Manager</h1>
+
+  <!-- 1. AUTH CARD (Shown when logged out) -->
+  <div id="authCard" class="card">
+    <h2>🔐 Account Login / Sign Up</h2>
+    <div class="stack">
+      <input type="text" id="username" placeholder="Username (only needed for Sign Up)" />
+      <input type="email" id="email" placeholder="Email" />
+      <input type="password" id="password" placeholder="Password" />
+      <div class="input-group">
+        <button onclick="login()">Log In</button>
+        <button class="secondary" onclick="register()">Sign Up</button>
+      </div>
+    </div>
+    <p id="authMsg" class="msg"></p>
+  </div>
+
+  <!-- 2. TASK MANAGER CARD (Shown when logged in) -->
+  <div id="appCard" class="card hidden">
+    <div class="header-row">
+      <h1>📝 Task Manager</h1>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="input-group">
+      <input type="text" id="searchInput" placeholder="🔍 Search tasks..." oninput="loadTasks()" />
+    </div>
+
+    <!-- Add Task -->
     <div class="input-group">
       <input type="text" id="taskTitle" placeholder="What needs to be done?" />
       <button onclick="addTask()">Add</button>
     </div>
+
     <ul id="taskList"></ul>
   </div>
 
   <script>
-    const API_URL = '/api/tasks';
+    const TASKS_URL = '/api/tasks';
+    const AUTH_URL = '/api/auth';
 
-    // 1. Fetch & display all tasks (GET)
+    // Check if user already has a VIP wristband (token) saved
+    function checkAuth() {
+      const token = localStorage.getItem('token');
+      if (token) {
+        document.getElementById('authCard').classList.add('hidden');
+        document.getElementById('appCard').classList.remove('hidden');
+        loadTasks();
+      } else {
+        document.getElementById('authCard').classList.remove('hidden');
+        document.getElementById('appCard').classList.add('hidden');
+      }
+    }
+
+    // SIGN UP
+    async function register() {
+      const username = document.getElementById('username').value;
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      const res = await fetch(`${AUTH_URL}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email, password })
+      });
+      const data = await res.json();
+      document.getElementById('authMsg').style.color = res.ok ? 'green' : '#d9534f';
+      document.getElementById('authMsg').innerText = data.message;
+    }
+
+    // LOG IN
+    async function login() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      const res = await fetch(`${AUTH_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        // Save the JWT token in browser storage!
+        localStorage.setItem('token', data.token);
+        document.getElementById('authMsg').innerText = '';
+        checkAuth();
+      } else {
+        document.getElementById('authMsg').style.color = '#d9534f';
+        document.getElementById('authMsg').innerText = data.message;
+      }
+    }
+
+    // LOGOUT
+    function logout() {
+      localStorage.removeItem('token');
+      checkAuth();
+    }
+
+    // Helper to attach our VIP Wristband (Token) to every request
+    function getAuthHeaders() {
+      const token = localStorage.getItem('token');
+      return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
+    }
+
+    // FETCH TASKS (with Search!)
     async function loadTasks() {
-      const res = await fetch(API_URL);
+      const search = document.getElementById('searchInput').value;
+      const url = search ? `${TASKS_URL}?search=${encodeURIComponent(search)}` : TASKS_URL;
+
+      const res = await fetch(url, { headers: getAuthHeaders() });
+      if (res.status === 401) return logout();
+
       const tasks = await res.json();
       const list = document.getElementById('taskList');
       list.innerHTML = '';
@@ -50,36 +157,39 @@
       });
     }
 
-    // 2. Add a new task (POST)
+    // ADD TASK
     async function addTask() {
       const input = document.getElementById('taskTitle');
       if (!input.value.trim()) return;
-      await fetch(API_URL, {
+      await fetch(TASKS_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ title: input.value })
       });
       input.value = '';
       loadTasks();
     }
 
-    // 3. Toggle completed (PUT)
+    // TOGGLE TASK
     async function toggleTask(id, currentStatus) {
-      await fetch(`${API_URL}/${id}`, {
+      await fetch(`${TASKS_URL}/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ completed: !currentStatus })
       });
       loadTasks();
     }
 
-    // 4. Delete task (DELETE)
+    // DELETE TASK
     async function deleteTask(id) {
-      await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+      await fetch(`${TASKS_URL}/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
       loadTasks();
     }
 
-    loadTasks();
+    checkAuth();
   </script>
 </body>
 </html>
